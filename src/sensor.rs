@@ -93,15 +93,16 @@ impl<'a> UartSensorDriver<'a> {
             .write(distance_cmd)
             .map_err(|_| UartSensorError::IrError)?;
         // Blocking wait.
-        // Get the command to read the distance using modbus.
+        // Get the data to calculate the distance using modbus.
         // Arguments 0: device address.
         // Arguments 1: command.
         // Arguments 2: data byte 1.
         // Arguments 3: data byte 2.
         // ------------------------
         // Arguments n: data byte n-1.
-        // The second-to-last arguments: CRC high byte (Calculated by the modbus protocol, change according to different commands).
-        // The last arguments: CRC low byte (Calculated by the modbus protocol, change according to different commands).
+        // The second-to-last arguments: CRC high byte (Calculated by the modbus protocol, change according to different datas).
+        // The last arguments: CRC low byte (Calculated by the modbus protocol, change according to different datas).
+        // CRC is not currently in use.
         self.uart
             .read_exact(distance_raw)
             .map_err(|_| UartSensorError::IrError)?;
