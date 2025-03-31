@@ -1,16 +1,17 @@
-#[allow(unused_imports)]
 use esp_idf_svc as svc;
 use hal::sys;
 use svc::hal;
 
-use esp32s3_demo::sensor::{AsyncUartSensorDriver, I2cSensorDriver, UartSensorDriver};
+use esp32s3_demo::pwm::PwmDriver;
+use esp32s3_demo::sensor::{AsyncUartSensorDriver, I2cSensorDriver};
 use hal::delay::FreeRtos;
 use hal::gpio::AnyIOPin;
 use hal::i2c::{I2cConfig, I2cDriver};
+use hal::ledc::{self, LedcDriver, LedcTimerDriver};
 use hal::peripherals::Peripherals;
 use hal::prelude::*;
 use hal::task::block_on;
-use hal::uart::{self, AsyncUartDriver, UartDriver};
+use hal::uart::{self, AsyncUartDriver};
 
 fn main() -> anyhow::Result<()> {
     sys::link_patches();
@@ -22,6 +23,7 @@ fn main() -> anyhow::Result<()> {
     let i2c0_sda = p.pins.gpio13;
     let uart1_tx = p.pins.gpio12;
     let uart1_rx = p.pins.gpio11;
+    let pwm0_pin = p.pins.gpio10;
 
     let uart1_config = uart::config::Config::default().baudrate(Hertz(115_200));
     let uart1 = AsyncUartDriver::new(
@@ -32,14 +34,22 @@ fn main() -> anyhow::Result<()> {
         Option::<AnyIOPin>::None,
         &uart1_config,
     )?;
-    let mut uart1_sensor = AsyncUartSensorDriver::new(uart1);
+    let mut uart1_sensor = AsyncUartSensorDriver::new(uart1)?;
 
     let i2c0_cfg = I2cConfig::new()
         .baudrate(400.kHz().into())
         .scl_enable_pullup(true)
         .sda_enable_pullup(true);
     let i2c0 = I2cDriver::new(p.i2c1, i2c0_sda, i2c0_scl, &i2c0_cfg)?;
-    let mut i2c0_sensor = I2cSensorDriver::new(i2c0);
+    let mut i2c0_sensor = I2cSensorDriver::new(i2c0)?;
+
+    let driver0 = LedcTimerDriver::new(
+        p.ledc.timer0,
+        &ledc::config::TimerConfig::default().frequency(100.kHz().into()),
+    )?;
+    let tim0_ch0 = LedcDriver::new(p.ledc.channel0, driver0, pwm0_pin)?;
+    let mut pwm0 = PwmDriver::new(tim0_ch0)?;
+    pwm0.set_duty_percent(0.12)?;
 
     block_on(async {
         loop {
