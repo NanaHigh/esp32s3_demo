@@ -7,7 +7,7 @@ use esp32s3_demo::sensor::{AsyncUartSensorDriver, I2cSensorDriver};
 use hal::delay::FreeRtos;
 use hal::gpio::AnyIOPin;
 use hal::i2c::{I2cConfig, I2cDriver};
-use hal::ledc::{self, LedcDriver, LedcTimerDriver, Resolution};
+use hal::ledc::{self, LedcDriver, LedcTimerDriver};
 use hal::peripherals::Peripherals;
 use hal::prelude::*;
 use hal::task::block_on;
@@ -45,8 +45,7 @@ fn main() -> anyhow::Result<()> {
 
     let driver0 = LedcTimerDriver::new(
         p.ledc.timer0,
-        &ledc::config::TimerConfig::default()
-            .frequency(100.kHz().into())
+        &ledc::config::TimerConfig::default().frequency(100.kHz().into()),
     )?;
     let tim0_ch0 = LedcDriver::new(p.ledc.channel0, driver0, pwm0_pin)?;
     let mut pwm0 = PwmDriver::new(tim0_ch0)?;
