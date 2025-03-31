@@ -23,8 +23,8 @@ impl<'a> I2cSensorDriver<'a> {
     const IMU_ANGLE_ADDR: u8 = 0x3D;
 
     /// Create a new i2c sensor driver.
-    pub fn new(i2c_drv: I2cDriver<'a>) -> Self {
-        Self { i2c: i2c_drv }
+    pub fn new(i2c_drv: I2cDriver<'a>) -> Result<Self, I2cSensorError> {
+        Ok(Self { i2c: i2c_drv })
     }
 
     /// Read the angle from the IMU (Blocking).
@@ -64,8 +64,8 @@ impl<'a> UartSensorDriver<'a> {
     const IR_READ_CMD: u8 = 0x03;
 
     /// Create a new uart sensor driver.
-    pub fn new(uart_drv: UartDriver<'a>) -> Self {
-        Self { uart: uart_drv }
+    pub fn new(uart_drv: UartDriver<'a>) -> Result<Self, UartSensorError> {
+        Ok(Self { uart: uart_drv })
     }
 
     /// Read the distance from the IR sensor (Blocking).
@@ -129,8 +129,8 @@ where
     const IR_READ_CMD: u8 = 0x03;
 
     /// Create a new async uart sensor driver.
-    pub fn new(uart_drv: AsyncUartDriver<'a, T>) -> Self {
-        Self { uart: uart_drv }
+    pub fn new(uart_drv: AsyncUartDriver<'a, T>) -> Result<Self, UartSensorError> {
+        Ok(Self { uart: uart_drv })
     }
 
     /// Read the distance from the IR sensor (Non blocking).
