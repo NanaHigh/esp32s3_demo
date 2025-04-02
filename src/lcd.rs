@@ -1,3 +1,6 @@
+// TODO: improve code abstraction.
+#![allow(clippy::type_complexity)]
+#![allow(clippy::too_many_arguments)]
 use esp_idf_svc::hal;
 
 use embedded_hal::spi::MODE_3;
