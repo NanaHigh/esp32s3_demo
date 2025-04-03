@@ -14,9 +14,11 @@ use hal::prelude::*;
 use hal::task::block_on;
 use hal::uart::{self, AsyncUartDriver};
 
-use embedded_graphics::image::*;
+use embedded_graphics::image::{Image, ImageRawLE};
+use embedded_graphics::mono_font::{ascii::FONT_9X15, MonoTextStyle};
 use embedded_graphics::pixelcolor::Rgb565;
 use embedded_graphics::prelude::*;
+use embedded_graphics::text::Text;
 
 fn main() -> anyhow::Result<()> {
     sys::link_patches();
@@ -64,7 +66,7 @@ fn main() -> anyhow::Result<()> {
     let sdi = p.pins.gpio8.into();
     let cs = p.pins.gpio9.into();
 
-    let lcd_cfg = LcdConfig::new(LcdDriverType::St7735s, 160, 128);
+    let lcd_cfg = LcdConfig::new(LcdDriverType::St7789, 240, 240);
     let mut display = LcdDriver::new(
         p.spi2,
         lcd_cfg,
@@ -76,16 +78,23 @@ fn main() -> anyhow::Result<()> {
         cs,
         26.MHz().into(),
     )?
-    .as_st7735s()?;
+    .as_st7789()?;
 
-    // Turn on the backlight.
-    let raw_image_data = ImageRawLE::new(include_bytes!("./assets/ferris.raw"), 86);
-    let ferris = Image::new(&raw_image_data, Point::new(0, 0));
+    let ferris = ImageRawLE::new(include_bytes!("./assets/ferris.raw"), 86);
+    let hello_text = MonoTextStyle::new(&FONT_9X15, Rgb565::WHITE);
 
     // Draw image on black background.
+    // Turn on the backlight.
     backlight.set_high()?;
     display.clear(Rgb565::BLACK).unwrap();
-    ferris.draw(&mut display).unwrap();
+    Image::new(&ferris, Point::new(0, 0))
+        .draw(&mut display)
+        .unwrap();
+
+    // Draw text below image.
+    Text::new("Hello,Rust!\nI'm ferris!", Point::new(0, 80), hello_text)
+        .draw(&mut display)
+        .unwrap();
 
     log::info!("Image printed!");
 
