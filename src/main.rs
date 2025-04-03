@@ -2,16 +2,23 @@ use esp_idf_svc as svc;
 use hal::sys;
 use svc::hal;
 
+use esp32s3_demo::lcd::{LcdConfig, LcdDriver, LcdDriverType};
 use esp32s3_demo::pwm::PwmDriver;
 use esp32s3_demo::sensor::{AsyncUartSensorDriver, I2cSensorDriver};
 use hal::delay::FreeRtos;
-use hal::gpio::AnyIOPin;
+use hal::gpio::{AnyIOPin, PinDriver};
 use hal::i2c::{I2cConfig, I2cDriver};
 use hal::ledc::{self, LedcDriver, LedcTimerDriver};
 use hal::peripherals::Peripherals;
 use hal::prelude::*;
 use hal::task::block_on;
 use hal::uart::{self, AsyncUartDriver};
+
+use embedded_graphics::image::{Image, ImageRawLE};
+use embedded_graphics::mono_font::{ascii::FONT_9X15, MonoTextStyle};
+use embedded_graphics::pixelcolor::Rgb565;
+use embedded_graphics::prelude::*;
+use embedded_graphics::text::Text;
 
 fn main() -> anyhow::Result<()> {
     sys::link_patches();
@@ -50,6 +57,46 @@ fn main() -> anyhow::Result<()> {
     let tim0_ch0 = LedcDriver::new(p.ledc.channel0, driver0, pwm0_pin)?;
     let mut pwm0 = PwmDriver::new(tim0_ch0)?;
     pwm0.set_duty_percent(0.12)?;
+
+    let rst = p.pins.gpio3.into();
+    let dc = p.pins.gpio4.into();
+    let mut backlight = PinDriver::output(p.pins.gpio5)?;
+    let sclk = p.pins.gpio6.into();
+    let sdo = p.pins.gpio7.into();
+    let sdi = p.pins.gpio8.into();
+    let cs = p.pins.gpio9.into();
+
+    let lcd_cfg = LcdConfig::new(LcdDriverType::St7789, 240, 240);
+    let mut display = LcdDriver::new(
+        p.spi2,
+        lcd_cfg,
+        sclk,
+        sdo,
+        sdi,
+        rst,
+        dc,
+        cs,
+        26.MHz().into(),
+    )?
+    .as_st7789()?;
+
+    let ferris = ImageRawLE::new(include_bytes!("./assets/ferris.raw"), 86);
+    let hello_text = MonoTextStyle::new(&FONT_9X15, Rgb565::WHITE);
+
+    // Draw image on black background.
+    // Turn on the backlight.
+    backlight.set_high()?;
+    display.clear(Rgb565::BLACK).unwrap();
+    Image::new(&ferris, Point::new(0, 0))
+        .draw(&mut display)
+        .unwrap();
+
+    // Draw text below image.
+    Text::new("Hello,Rust!\nI'm ferris!", Point::new(0, 80), hello_text)
+        .draw(&mut display)
+        .unwrap();
+
+    log::info!("Image printed!");
 
     block_on(async {
         loop {
