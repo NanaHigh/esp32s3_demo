@@ -24,6 +24,8 @@ use mipidsi::{
 pub enum LcdError {
     #[error("Lcd error")]
     LcdError,
+    #[error("Lcd type mismatch error")]
+    LcdMismatchError,
 }
 
 /// Lcd driver type.
@@ -160,7 +162,7 @@ impl<'a> LcdDriver<'a> {
     > {
         match self.lcd {
             LcdDisplay::St7735s(display) => Ok(display),
-            _ => Err(LcdError::LcdError),
+            _ => Err(LcdError::LcdMismatchError),
         }
     }
 
@@ -177,7 +179,7 @@ impl<'a> LcdDriver<'a> {
     > {
         match self.lcd {
             LcdDisplay::St7789(display) => Ok(display),
-            _ => Err(LcdError::LcdError),
+            _ => Err(LcdError::LcdMismatchError),
         }
     }
 }
