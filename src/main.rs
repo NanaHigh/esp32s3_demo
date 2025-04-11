@@ -12,6 +12,7 @@ use hal::i2c::{I2cConfig, I2cDriver};
 use hal::ledc::{self, LedcDriver, LedcTimerDriver};
 use hal::peripherals::Peripherals;
 use hal::prelude::*;
+use hal::spi::Dma;
 use hal::task::block_on;
 use hal::uart::{self, AsyncUartDriver};
 
@@ -67,7 +68,9 @@ fn main() -> anyhow::Result<()> {
     let sdi = p.pins.gpio8.into();
     let cs = p.pins.gpio9.into();
 
-    let lcd_cfg = LcdConfig::new(LcdDriverType::St7789, 240, 240);
+    // Dma size is 32KB.
+    let lcd_cfg = LcdConfig::new(LcdDriverType::St7789, 240, 240).dma(Dma::Auto(32 * 1024))?;
+
     let mut display = LcdDriver::new(
         p.spi2,
         lcd_cfg,
