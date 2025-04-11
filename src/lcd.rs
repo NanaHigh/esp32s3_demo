@@ -7,7 +7,7 @@ use embedded_hal::spi::MODE_3;
 use hal::delay::Ets;
 use hal::gpio::{AnyIOPin, Output, PinDriver};
 use hal::peripheral::Peripheral;
-use hal::spi::{self, SpiAnyPins, SpiDeviceDriver, SpiDriver, SpiDriverConfig};
+use hal::spi::{self, Dma, SpiAnyPins, SpiDeviceDriver, SpiDriver, SpiDriverConfig};
 use hal::units::Hertz;
 
 use display_interface_spi::SPIInterfaceNoCS;
@@ -24,6 +24,8 @@ use mipidsi::{
 pub enum LcdError {
     #[error("Lcd error")]
     LcdError,
+    #[error("Lcd type mismatch error")]
+    LcdMismatchError,
 }
 
 /// Lcd driver type.
@@ -40,6 +42,7 @@ pub struct LcdConfig {
     pub height: u16,
     pub orientation: Orientation,
     pub color_order: ColorOrder,
+    pub dma: Dma,
 }
 
 impl LcdConfig {
@@ -51,19 +54,44 @@ impl LcdConfig {
             height,
             orientation: Orientation::Portrait(false),
             color_order: ColorOrder::Rgb,
+            dma: Dma::Disabled,
         }
     }
 
     /// Set orientation.
-    pub fn set_orientation(&mut self, orientation: Orientation) -> Result<(), LcdError> {
-        self.orientation = orientation;
-        Ok(())
+    pub fn orientation(self, orientation: Orientation) -> Result<Self, LcdError> {
+        Ok(Self {
+            drv_type: self.drv_type,
+            width: self.width,
+            height: self.height,
+            orientation,
+            color_order: self.color_order,
+            dma: self.dma,
+        })
     }
 
     /// Set color order.
-    pub fn set_color_order(&mut self, color_order: ColorOrder) -> Result<(), LcdError> {
-        self.color_order = color_order;
-        Ok(())
+    pub fn color_order(self, color_order: ColorOrder) -> Result<Self, LcdError> {
+        Ok(Self {
+            drv_type: self.drv_type,
+            width: self.width,
+            height: self.height,
+            orientation: self.orientation,
+            color_order,
+            dma: self.dma,
+        })
+    }
+
+    /// Set DMA.
+    pub fn dma(self, dma: Dma) -> Result<Self, LcdError> {
+        Ok(Self {
+            drv_type: self.drv_type,
+            width: self.width,
+            height: self.height,
+            orientation: self.orientation,
+            color_order: self.color_order,
+            dma,
+        })
     }
 }
 
@@ -115,7 +143,7 @@ impl<'a> LcdDriver<'a> {
             sdo,
             Some(sdi),
             Some(cs),
-            &SpiDriverConfig::new(),
+            &SpiDriverConfig::new().dma(lcd_cfg.dma),
             &spi_cfg,
         )
         .map_err(|_| LcdError::LcdError)?;
@@ -160,7 +188,7 @@ impl<'a> LcdDriver<'a> {
     > {
         match self.lcd {
             LcdDisplay::St7735s(display) => Ok(display),
-            _ => Err(LcdError::LcdError),
+            _ => Err(LcdError::LcdMismatchError),
         }
     }
 
@@ -177,7 +205,7 @@ impl<'a> LcdDriver<'a> {
     > {
         match self.lcd {
             LcdDisplay::St7789(display) => Ok(display),
-            _ => Err(LcdError::LcdError),
+            _ => Err(LcdError::LcdMismatchError),
         }
     }
 }

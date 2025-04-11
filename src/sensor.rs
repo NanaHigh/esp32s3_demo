@@ -9,8 +9,8 @@ use thiserror::Error;
 /// I2c sensor error.
 #[derive(Debug, Error)]
 pub enum I2cSensorError {
-    #[error("Imu communication error")]
-    ImuError,
+    #[error("Imu read error")]
+    ImuReadError,
 }
 
 /// I2c sensor driver.
@@ -36,7 +36,7 @@ impl<'a> I2cSensorDriver<'a> {
 
         self.i2c
             .write_read(Self::IMU_ADDR, &[Self::IMU_ANGLE_ADDR], angle_raw, BLOCK)
-            .map_err(|_| I2cSensorError::ImuError)?;
+            .map_err(|_| I2cSensorError::ImuReadError)?;
 
         Ok([
             i16::from_le_bytes([angle_raw[0], angle_raw[1]]) as f32 / 32768.0 * 180.0,
@@ -49,8 +49,10 @@ impl<'a> I2cSensorDriver<'a> {
 /// Uart sensor error.
 #[derive(Debug, Error)]
 pub enum UartSensorError {
-    #[error("Infrared sensor communication error")]
-    IrError,
+    #[error("Infrared sensor write error")]
+    IrWriteError,
+    #[error("Infrared sensor read error")]
+    IrReadError,
 }
 
 /// Uart sensor driver.
@@ -92,7 +94,7 @@ impl<'a> UartSensorDriver<'a> {
         let distance_raw = &mut [0u8; 7];
         self.uart
             .write(distance_cmd)
-            .map_err(|_| UartSensorError::IrError)?;
+            .map_err(|_| UartSensorError::IrWriteError)?;
         // Blocking wait.
         // Get the data to calculate the distance using modbus.
         // Arguments 0: device address.
@@ -106,7 +108,7 @@ impl<'a> UartSensorDriver<'a> {
         // CRC is not currently in use.
         self.uart
             .read_exact(distance_raw)
-            .map_err(|_| UartSensorError::IrError)?;
+            .map_err(|_| UartSensorError::IrReadError)?;
 
         Ok(u16::from_be_bytes([distance_raw[3], distance_raw[4]]))
     }
@@ -158,7 +160,7 @@ where
         self.uart
             .write(distance_cmd)
             .await
-            .map_err(|_| UartSensorError::IrError)?;
+            .map_err(|_| UartSensorError::IrWriteError)?;
         // Get the data to calculate the distance using modbus.
         // Arguments 0: device address.
         // Arguments 1: command.
@@ -172,7 +174,7 @@ where
         self.uart
             .read(distance_raw)
             .await
-            .map_err(|_| UartSensorError::IrError)?;
+            .map_err(|_| UartSensorError::IrReadError)?;
 
         Ok(u16::from_be_bytes([distance_raw[3], distance_raw[4]]))
     }

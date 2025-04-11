@@ -5,20 +5,22 @@ use svc::hal;
 use esp32s3_demo::lcd::{LcdConfig, LcdDriver, LcdDriverType};
 use esp32s3_demo::pwm::PwmDriver;
 use esp32s3_demo::sensor::{AsyncUartSensorDriver, I2cSensorDriver};
+
 use hal::delay::FreeRtos;
 use hal::gpio::{AnyIOPin, PinDriver};
 use hal::i2c::{I2cConfig, I2cDriver};
 use hal::ledc::{self, LedcDriver, LedcTimerDriver};
 use hal::peripherals::Peripherals;
 use hal::prelude::*;
+use hal::spi::Dma;
 use hal::task::block_on;
 use hal::uart::{self, AsyncUartDriver};
 
 use embedded_graphics::image::{Image, ImageRawLE};
-use embedded_graphics::mono_font::{ascii::FONT_9X15, MonoTextStyle};
+use embedded_graphics::mono_font::{ascii::FONT_10X20, MonoTextStyle};
 use embedded_graphics::pixelcolor::Rgb565;
 use embedded_graphics::prelude::*;
-use embedded_graphics::text::Text;
+use embedded_graphics::text::{renderer::CharacterStyle, Text};
 
 fn main() -> anyhow::Result<()> {
     sys::link_patches();
@@ -66,7 +68,9 @@ fn main() -> anyhow::Result<()> {
     let sdi = p.pins.gpio8.into();
     let cs = p.pins.gpio9.into();
 
-    let lcd_cfg = LcdConfig::new(LcdDriverType::St7789, 240, 240);
+    // Dma size is 32KB.
+    let lcd_cfg = LcdConfig::new(LcdDriverType::St7789, 240, 240).dma(Dma::Auto(32 * 1024))?;
+
     let mut display = LcdDriver::new(
         p.spi2,
         lcd_cfg,
@@ -76,23 +80,25 @@ fn main() -> anyhow::Result<()> {
         rst,
         dc,
         cs,
-        26.MHz().into(),
+        80.MHz().into(),
     )?
     .as_st7789()?;
 
     let ferris = ImageRawLE::new(include_bytes!("./assets/ferris.raw"), 86);
-    let hello_text = MonoTextStyle::new(&FONT_9X15, Rgb565::WHITE);
+    let mut text_style = MonoTextStyle::new(&FONT_10X20, Rgb565::WHITE);
+    text_style.set_background_color(Some(Rgb565::BLACK));
 
     // Draw image on black background.
     // Turn on the backlight.
-    backlight.set_high()?;
     display.clear(Rgb565::BLACK).unwrap();
+    FreeRtos::delay_ms(50);
+    backlight.set_high()?;
     Image::new(&ferris, Point::new(0, 0))
         .draw(&mut display)
         .unwrap();
 
     // Draw text below image.
-    Text::new("Hello,Rust!\nI'm ferris!", Point::new(0, 80), hello_text)
+    Text::new("Hello, Rust!\nI'm ferris!", Point::new(0, 80), text_style)
         .draw(&mut display)
         .unwrap();
 
@@ -102,14 +108,26 @@ fn main() -> anyhow::Result<()> {
         loop {
             let angle = i2c0_sensor.read_angle()?;
 
-            let distance = uart1_sensor.read_distance().await?;
+            let distance = uart1_sensor.read_distance().await? as f32 / 10.0;
 
-            log::info!("Distance: {}mm", distance);
-            log::info!("Roll: {:.2}", angle[0]);
-            log::info!("Pitch: {:.2}", angle[1]);
-            log::info!("Yaw: {:.2}", angle[2]);
+            let lcd_string = format!(
+                "{label:<8}{value:>7.1}\n\
+                 {roll_label:<8}{roll:>8.2}\n\
+                 {pitch_label:<8}{pitch:>8.2}\n\
+                 {yaw_label:<8}{yaw:>8.2}",
+                label = "Distance:",
+                value = distance,
+                roll_label = "Roll:",
+                roll = angle[0],
+                pitch_label = "Pitch:",
+                pitch = angle[1],
+                yaw_label = "Yaw:",
+                yaw = angle[2],
+            );
 
-            FreeRtos::delay_ms(2000);
+            Text::new(&lcd_string, Point::new(0, 120), text_style)
+                .draw(&mut display)
+                .unwrap();
         }
     })
 }
