@@ -49,7 +49,7 @@ fn main() -> anyhow::Result<()> {
         .baudrate(400.kHz().into())
         .scl_enable_pullup(true)
         .sda_enable_pullup(true);
-    let i2c0 = I2cDriver::new(p.i2c1, i2c0_sda, i2c0_scl, &i2c0_cfg)?;
+    let i2c0 = I2cDriver::new(p.i2c0, i2c0_sda, i2c0_scl, &i2c0_cfg)?;
     let mut i2c0_sensor = I2cSensorDriver::new(i2c0)?;
 
     let driver0 = LedcTimerDriver::new(
