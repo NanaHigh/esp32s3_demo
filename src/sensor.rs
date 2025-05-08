@@ -1,6 +1,6 @@
 use core::borrow::BorrowMut;
 use esp_idf_svc::hal;
-use hal::delay::BLOCK;
+use hal::delay::{FreeRtos, BLOCK};
 use hal::i2c::I2cDriver;
 use hal::io::Read;
 use hal::uart::{AsyncUartDriver, UartDriver};
@@ -11,6 +11,8 @@ use thiserror::Error;
 pub enum I2cSensorError {
     #[error("Imu read error")]
     ImuReadError,
+    #[error("Gray sensor read error")]
+    GrayReadError,
 }
 
 /// I2c sensor driver.
@@ -19,8 +21,14 @@ pub struct I2cSensorDriver<'a> {
 }
 
 impl<'a> I2cSensorDriver<'a> {
+    const MAX_RETRIES: u8 = 3;
+    const RETRY_DELAY_MS: u32 = 100;
+
     const IMU_ADDR: u8 = 0x50;
     const IMU_ANGLE_ADDR: u8 = 0x3D;
+
+    const IR_ADDR: u8 = 0x12;
+    const IR_LINE_ADDR: u8 = 0x30;
 
     /// Create a new i2c sensor driver.
     pub fn new(i2c_drv: I2cDriver<'a>) -> Result<Self, I2cSensorError> {
@@ -33,16 +41,63 @@ impl<'a> I2cSensorDriver<'a> {
     /// Yaw = angle_buf[2];
     pub fn read_angle(&mut self) -> Result<[f32; 3], I2cSensorError> {
         let angle_raw = &mut [0u8; 6];
+        let mut attempts = 0;
 
-        self.i2c
-            .write_read(Self::IMU_ADDR, &[Self::IMU_ANGLE_ADDR], angle_raw, BLOCK)
-            .map_err(|_| I2cSensorError::ImuReadError)?;
+        while attempts < Self::MAX_RETRIES {
+            match self
+                .i2c
+                .write_read(Self::IMU_ADDR, &[Self::IMU_ANGLE_ADDR], angle_raw, BLOCK)
+            {
+                Ok(_) => {
+                    return Ok([
+                        i16::from_le_bytes([angle_raw[0], angle_raw[1]]) as f32 / 32768.0 * 180.0,
+                        i16::from_le_bytes([angle_raw[2], angle_raw[3]]) as f32 / 32768.0 * 180.0,
+                        i16::from_le_bytes([angle_raw[4], angle_raw[5]]) as f32 / 32768.0 * 180.0,
+                    ])
+                }
+                Err(e) => {
+                    log::error!("Gray sensor read error (attempt {}): {:?}", attempts + 1, e);
+                    if attempts < Self::MAX_RETRIES - 1 {
+                        FreeRtos::delay_ms(Self::RETRY_DELAY_MS);
+                    }
+                    attempts += 1;
+                }
+            }
+        }
+        Err(I2cSensorError::ImuReadError)
+    }
 
-        Ok([
-            i16::from_le_bytes([angle_raw[0], angle_raw[1]]) as f32 / 32768.0 * 180.0,
-            i16::from_le_bytes([angle_raw[2], angle_raw[3]]) as f32 / 32768.0 * 180.0,
-            i16::from_le_bytes([angle_raw[4], angle_raw[5]]) as f32 / 32768.0 * 180.0,
-        ])
+    pub fn read_line(&mut self) -> Result<[bool; 8], I2cSensorError> {
+        let line = &mut [0u8];
+        let mut attempts = 0;
+
+        while attempts < Self::MAX_RETRIES {
+            match self
+                .i2c
+                .write_read(Self::IR_ADDR, &[Self::IR_LINE_ADDR], line, BLOCK)
+            {
+                Ok(_) => {
+                    return Ok([
+                        line[0] & 0x80 == 0,
+                        line[0] & 0x40 == 0,
+                        line[0] & 0x20 == 0,
+                        line[0] & 0x10 == 0,
+                        line[0] & 0x08 == 0,
+                        line[0] & 0x04 == 0,
+                        line[0] & 0x02 == 0,
+                        line[0] & 0x01 == 0,
+                    ])
+                }
+                Err(e) => {
+                    log::error!("Gray sensor read error (attempt {}): {:?}", attempts + 1, e);
+                    if attempts < Self::MAX_RETRIES - 1 {
+                        FreeRtos::delay_ms(Self::RETRY_DELAY_MS);
+                    }
+                    attempts += 1;
+                }
+            }
+        }
+        Err(I2cSensorError::GrayReadError)
     }
 }
 
@@ -53,6 +108,10 @@ pub enum UartSensorError {
     IrWriteError,
     #[error("Infrared sensor read error")]
     IrReadError,
+    #[error("Camera communication error")]
+    CamError,
+    #[error("Camera val invalid")]
+    CamInvalid,
 }
 
 /// Uart sensor driver.
@@ -111,6 +170,19 @@ impl<'a> UartSensorDriver<'a> {
             .map_err(|_| UartSensorError::IrReadError)?;
 
         Ok(u16::from_be_bytes([distance_raw[3], distance_raw[4]]))
+    }
+
+    /// Read the camera label (Blocking).
+    pub fn read_cam_label(&mut self) -> Result<u8, UartSensorError> {
+        let raw = &mut [0u8; 1];
+        self.uart
+            .read(raw, BLOCK)
+            .map_err(|_| UartSensorError::CamError)?;
+        if raw[0] > 0 && raw[0] < 9 {
+            Ok(raw[0])
+        } else {
+            Err(UartSensorError::CamInvalid)
+        }
     }
 }
 
