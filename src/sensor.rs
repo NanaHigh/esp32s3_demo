@@ -3,6 +3,7 @@ use esp_idf_svc::hal;
 use hal::delay::{FreeRtos, BLOCK};
 use hal::i2c::I2cDriver;
 use hal::io::Read;
+use hal::sys::EspError;
 use hal::uart::{AsyncUartDriver, UartDriver};
 use thiserror::Error;
 
@@ -11,8 +12,17 @@ use thiserror::Error;
 pub enum I2cSensorError {
     #[error("Imu read error")]
     ImuReadError,
+    #[error("Imu write error: {0}")]
+    ImuWriteError(EspError),
     #[error("Gray sensor read error")]
     GrayReadError,
+}
+
+/// Imu mode.
+#[derive(Debug, PartialEq)]
+pub enum ImuMode {
+    Axis9,
+    Axis6,
 }
 
 /// I2c sensor driver.
@@ -24,6 +34,8 @@ impl<'a> I2cSensorDriver<'a> {
     const MAX_RETRIES: u8 = 3;
     const RETRY_DELAY_MS: u32 = 100;
 
+    const IMU_ERROR: bool = true;
+    const IMU_ERR_ADDR: u8 = 0x00;
     const IMU_ADDR: u8 = 0x50;
     const IMU_ANGLE_ADDR: u8 = 0x3D;
 
@@ -35,6 +47,95 @@ impl<'a> I2cSensorDriver<'a> {
         Ok(Self { i2c: i2c_drv })
     }
 
+    /// Set imu mode.
+    pub fn set_imu_mode(&mut self, mode: ImuMode) -> Result<(), I2cSensorError> {
+        let mode = match mode {
+            ImuMode::Axis9 => 0x00,
+            ImuMode::Axis6 => 0x01,
+        };
+        // Unlock the IMU.
+        self.i2c
+            .write(
+                if Self::IMU_ERROR {
+                    Self::IMU_ERR_ADDR
+                } else {
+                    Self::IMU_ADDR
+                },
+                &[0x69, 0x88, 0xB5],
+                BLOCK,
+            )
+            .map_err(|err| I2cSensorError::ImuWriteError(err))?;
+        // Set the IMU mode.
+        self.i2c
+            .write(
+                if Self::IMU_ERROR {
+                    Self::IMU_ERR_ADDR
+                } else {
+                    Self::IMU_ADDR
+                },
+                &[0x24, mode, 0x00],
+                BLOCK,
+            )
+            .map_err(|err| I2cSensorError::ImuWriteError(err))?;
+        // Lock the IMU.
+        self.i2c
+            .write(
+                if Self::IMU_ERROR {
+                    Self::IMU_ERR_ADDR
+                } else {
+                    Self::IMU_ADDR
+                },
+                &[0x00, 0x00, 0x00],
+                BLOCK,
+            )
+            .map_err(|err| I2cSensorError::ImuWriteError(err))?;
+        Ok(())
+    }
+
+    /// Reset the yaw angle.
+    /// Only available in axis 6 mode.
+    pub fn reset_yaw_angle(&mut self) -> Result<(), I2cSensorError> {
+        // Unlock the IMU.
+        self.i2c
+            .write(
+                if Self::IMU_ERROR {
+                    Self::IMU_ERR_ADDR
+                } else {
+                    Self::IMU_ADDR
+                },
+                &[0x69, 0x88, 0xB5],
+                BLOCK,
+            )
+            .map_err(|err| I2cSensorError::ImuWriteError(err))?;
+        FreeRtos::delay_ms(50);
+        // Reset the yaw angle.
+        self.i2c
+            .write(
+                if Self::IMU_ERROR {
+                    Self::IMU_ERR_ADDR
+                } else {
+                    Self::IMU_ADDR
+                },
+                &[0x01, 0x04, 0x00],
+                BLOCK,
+            )
+            .map_err(|err| I2cSensorError::ImuWriteError(err))?;
+        FreeRtos::delay_ms(200);
+        // Lock the IMU.
+        self.i2c
+            .write(
+                if Self::IMU_ERROR {
+                    Self::IMU_ERR_ADDR
+                } else {
+                    Self::IMU_ADDR
+                },
+                &[0x00, 0x00, 0x00],
+                BLOCK,
+            )
+            .map_err(|err| I2cSensorError::ImuWriteError(err))?;
+        Ok(())
+    }
+
     /// Read the angle from the IMU (Blocking).
     /// Roll = angle_buf[0];
     /// Pitch = angle_buf[1];
@@ -44,10 +145,16 @@ impl<'a> I2cSensorDriver<'a> {
         let mut attempts = 0;
 
         while attempts < Self::MAX_RETRIES {
-            match self
-                .i2c
-                .write_read(Self::IMU_ADDR, &[Self::IMU_ANGLE_ADDR], angle_raw, BLOCK)
-            {
+            match self.i2c.write_read(
+                if Self::IMU_ERROR {
+                    Self::IMU_ERR_ADDR
+                } else {
+                    Self::IMU_ADDR
+                },
+                &[Self::IMU_ANGLE_ADDR],
+                angle_raw,
+                BLOCK,
+            ) {
                 Ok(_) => {
                     return Ok([
                         i16::from_le_bytes([angle_raw[0], angle_raw[1]]) as f32 / 32768.0 * 180.0,
@@ -56,7 +163,7 @@ impl<'a> I2cSensorDriver<'a> {
                     ])
                 }
                 Err(e) => {
-                    log::error!("Gray sensor read error (attempt {}): {:?}", attempts + 1, e);
+                    log::error!("IMU read error (attempt {}): {:?}", attempts + 1, e);
                     if attempts < Self::MAX_RETRIES - 1 {
                         FreeRtos::delay_ms(Self::RETRY_DELAY_MS);
                     }
@@ -67,6 +174,9 @@ impl<'a> I2cSensorDriver<'a> {
         Err(I2cSensorError::ImuReadError)
     }
 
+    /// Read the line from the gray sensor (Blocking).
+    /// Line = [led1, led2, led3, led4, led5, led6, led7, led8].
+    /// True = black, false = white.
     pub fn read_line(&mut self) -> Result<[bool; 8], I2cSensorError> {
         let line = &mut [0u8];
         let mut attempts = 0;
@@ -89,7 +199,7 @@ impl<'a> I2cSensorDriver<'a> {
                     ])
                 }
                 Err(e) => {
-                    log::error!("Gray sensor read error (attempt {}): {:?}", attempts + 1, e);
+                    log::error!("IMU read error (attempt {}): {:?}", attempts + 1, e);
                     if attempts < Self::MAX_RETRIES - 1 {
                         FreeRtos::delay_ms(Self::RETRY_DELAY_MS);
                     }

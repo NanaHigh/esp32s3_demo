@@ -147,6 +147,7 @@ impl<'a> LcdDriver<'a> {
         )
         .map_err(|_| LcdError::LcdError)?;
 
+        // Display interface abstraction from SPI and DC.
         let di = SPIInterfaceNoCS::new(spi_device, dc_drv);
 
         match lcd_cfg.drv_type {
