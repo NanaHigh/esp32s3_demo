@@ -2,7 +2,7 @@ use esp_idf_svc as svc;
 use hal::sys;
 use svc::hal;
 
-use esp32s3_demo::car::{CarDriver, CarLocation};
+use esp32s3_demo::car::CarDriver;
 use esp32s3_demo::motor::MotorDriver;
 use esp32s3_demo::sensor::{I2cSensorDriver, ImuMode, UartSensorDriver};
 use hal::units::Hertz;
@@ -27,7 +27,7 @@ fn main() -> anyhow::Result<()> {
     let i2c0_sda = p.pins.gpio5;
     let uart1_rx = p.pins.gpio39;
     // Not used.
-    let uart1_tx = p.pins.gpio21;
+    let uart1_tx = p.pins.gpio20;
 
     let uart1_config = uart::config::Config::default().baudrate(Hertz(115_200));
     let uart1 = UartDriver::new(
@@ -140,39 +140,63 @@ fn main() -> anyhow::Result<()> {
     let mut sw1 = PinDriver::input(p.pins.gpio38)?;
     let mut sw2 = PinDriver::input(p.pins.gpio48)?;
     let mut sw3 = PinDriver::input(p.pins.gpio47)?;
+    let mut sw4 = PinDriver::input(p.pins.gpio21)?;
     sw1.set_pull(Pull::Up).ok();
     sw2.set_pull(Pull::Up).ok();
     sw3.set_pull(Pull::Up).ok();
+    sw4.set_pull(Pull::Up).ok();
 
     let mut num = 0u8;
-    let mut max_tries = 100;
-    // Get stable camera label
-    while max_tries > 0 {
-        if let Ok(label) = uart1_sensor.read_cam_label() {
-            num = label;
+
+    while sw1.is_high() {
+        FreeRtos::delay_ms(100);
+        if sw2.is_low() {
+            FreeRtos::delay_ms(50);
+            if sw2.is_low() {
+                if num < 8 {
+                    num += 1;
+                    car.beep(1)?;
+                }
+            }
         }
 
-        if num != 0 {
-            log::info!("Detected: {num}");
+        if sw3.is_low() {
+            FreeRtos::delay_ms(50);
+            if sw3.is_low() {
+                if num > 0 {
+                    num -= 1;
+                    car.beep(1)?;
+                }
+            }
         }
 
-        max_tries -= 1;
+        if sw4.is_low() {
+            FreeRtos::delay_ms(50);
+            if sw4.is_low() {
+                let mut max_tries = 10;
+                // Get stable camera label
+                while max_tries > 0 {
+                    if let Ok(label) = uart1_sensor.read_cam_label() {
+                        num = label;
+                        max_tries -= 1;
+                    }
 
-        FreeRtos::delay_ms(20);
+                    if num != 0 {
+                        log::info!("Detected: {num}");
+                    }
+
+                    FreeRtos::delay_ms(20);
+                }
+            }
+        }
     }
 
     log::info!("Location: {}", num);
 
-    while sw1.is_high() {
-        FreeRtos::delay_ms(100);
-    }
-
     log::info!("Start...");
 
-    let base_speed = 2.0; // Base speed
-    car.car_current_location = CarLocation::Start;
-    car.car_routing(base_speed, num)?;
-    car.beep(3)?;
+    let base_speed = 1.8; // Base speed
+    car.car_routing_block(base_speed, num)?;
 
     log::info!("Car reached the end location!");
 

@@ -34,7 +34,8 @@ impl<'a> I2cSensorDriver<'a> {
     const MAX_RETRIES: u8 = 3;
     const RETRY_DELAY_MS: u32 = 100;
 
-    const IMU_ERROR: bool = true;
+    // If IMU read return ESP_FAIL, toggle this flag.
+    const IMU_ERROR: bool = false;
     const IMU_ERR_ADDR: u8 = 0x00;
     const IMU_ADDR: u8 = 0x50;
     const IMU_ANGLE_ADDR: u8 = 0x3D;
@@ -64,7 +65,8 @@ impl<'a> I2cSensorDriver<'a> {
                 &[0x69, 0x88, 0xB5],
                 BLOCK,
             )
-            .map_err(|err| I2cSensorError::ImuWriteError(err))?;
+            .map_err(I2cSensorError::ImuWriteError)?;
+        FreeRtos::delay_ms(200);
         // Set the IMU mode.
         self.i2c
             .write(
@@ -76,7 +78,8 @@ impl<'a> I2cSensorDriver<'a> {
                 &[0x24, mode, 0x00],
                 BLOCK,
             )
-            .map_err(|err| I2cSensorError::ImuWriteError(err))?;
+            .map_err(I2cSensorError::ImuWriteError)?;
+        FreeRtos::delay_ms(200);
         // Lock the IMU.
         self.i2c
             .write(
@@ -88,7 +91,8 @@ impl<'a> I2cSensorDriver<'a> {
                 &[0x00, 0x00, 0x00],
                 BLOCK,
             )
-            .map_err(|err| I2cSensorError::ImuWriteError(err))?;
+            .map_err(I2cSensorError::ImuWriteError)?;
+        FreeRtos::delay_ms(200);
         Ok(())
     }
 
@@ -106,7 +110,8 @@ impl<'a> I2cSensorDriver<'a> {
                 &[0x69, 0x88, 0xB5],
                 BLOCK,
             )
-            .map_err(|err| I2cSensorError::ImuWriteError(err))?;
+            .map_err(I2cSensorError::ImuWriteError)?;
+        FreeRtos::delay_ms(200);
         FreeRtos::delay_ms(50);
         // Reset the yaw angle.
         self.i2c
@@ -119,7 +124,7 @@ impl<'a> I2cSensorDriver<'a> {
                 &[0x01, 0x04, 0x00],
                 BLOCK,
             )
-            .map_err(|err| I2cSensorError::ImuWriteError(err))?;
+            .map_err(I2cSensorError::ImuWriteError)?;
         FreeRtos::delay_ms(200);
         // Lock the IMU.
         self.i2c
@@ -132,7 +137,7 @@ impl<'a> I2cSensorDriver<'a> {
                 &[0x00, 0x00, 0x00],
                 BLOCK,
             )
-            .map_err(|err| I2cSensorError::ImuWriteError(err))?;
+            .map_err(I2cSensorError::ImuWriteError)?;
         Ok(())
     }
 
